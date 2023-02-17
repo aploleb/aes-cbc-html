@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>File Encryption</title>
+</head>
+<body>
+  <h1>File Encryption</h1>
+  <p>Select a file to encrypt:</p>
+  <input type="file" id="input-file" />
+  <p>Enter a password:</p>
+  <input type="password" id="password" />
+  <button onclick="encrypt()">Encrypt</button>
+  <p>Select a file to decrypt:</p>
+  <input type="file" id="output-file" />
+  <p>Enter the password:</p>
+  <input type="password" id="decrypt-password" />
+  <button onclick="decrypt()">Decrypt</button>
+
+  <script>
+function encrypt() {
+  const inputFile = document.getElementById('input-file').files[0];
+  const password = document.getElementById('password').value;
+  const outputFile = inputFile.name + '.pcv';
+  const reader = new FileReader();
+  reader.onload = () => {
+    const data = new Uint8Array(reader.result);
+    const iv = new Uint8Array(16);
+    window.crypto.getRandomValues(iv);
+    const key = crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveBits', 'deriveKey'])
+      .then(baseKey => crypto.subtle.deriveKey({ name: 'PBKDF2', salt: new TextEncoder().encode('salt'), iterations: 100000, hash: 'SHA-256' }, baseKey, { name: 'AES-CBC', length: 256 }, true, ['encrypt', 'decrypt']))
+    const cipher = Promise.all([key]).then(([key]) => crypto.subtle.encrypt({ name: 'AES-CBC', iv: iv }, key, data));
+    cipher.then(encrypted => {
+      const blob = new Blob([iv, encrypted], { type: 'application/octet-stream' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = outputFile;
+      link.click();
+    });
+  };
+  reader.readAsArrayBuffer(inputFile);
+}
+
+function decrypt() {
+  const inputFile = document.getElementById('output-file').files[0];
+  const password = document.getElementById('password').value;
+  const outputFile = inputFile.name.replace(/\.pcv$/, '');
+  const reader = new FileReader();
+  reader.onload = () => {
+    const data = new Uint8Array(reader.result);
+    const iv = data.slice(0, 16);
+    const encrypted = data.slice(16);
+    const baseKey = crypto.subtle.importKey('raw', new TextEncoder().encode(password), { name: 'PBKDF2' }, false, ['deriveBits', 'deriveKey']);
+    const key = baseKey.then((key) => {
+      return crypto.subtle.deriveKey(
+        { name: 'PBKDF2', salt: new TextEncoder().encode('salt'), iterations: 100000, hash: 'SHA-256' },
+        key,
+        { name: 'AES-CBC', length: 256 },
+        true,
+        ['encrypt', 'decrypt']
+      );
+    });
+    const decipher = key.then((key) => {
+      return crypto.subtle.decrypt({ name: 'AES-CBC', iv: iv }, key, encrypted);
+    });
+    decipher.then((decrypted) => {
+      const blob = new Blob([decrypted], { type: 'application/octet-stream' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = outputFile;
+      link.click();
+    }).catch((error) => {
+      console.error(error);
+      alert('Error decrypting file. Please make sure the password is correct.');
+    });
+  };
+  reader.readAsArrayBuffer(inputFile);
+}
+  </script>
+</body>
+</html>
